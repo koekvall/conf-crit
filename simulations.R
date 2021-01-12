@@ -27,15 +27,14 @@ do_one_sim <- function(seed, settings){
   # Fit model
   fit <- lme4::lmer(y ~ x + (1|obs) + (0 + x|obs), data = D, REML = FALSE)
   VC <- as.data.frame(lme4::VarCorr(fit))
+  
   # Fit null model and get lrt stat
   Z_tall <- as.matrix(lme4::getME(fit, "Z"))
   X_tall <- lme4::getME(fit, "X")
   Lam_null <- diag(rep(c(sigma_u1, sigma_u2), each = n_i), n_i * 2)
   Sigma_null <- diag(sigma_e^2, n_i * n_t) + Z_tall %*% Lam_null^2 %*% t(Z_tall)
-  R <- chol(Sigma_null)
-  y_null <- qr.solve(t(R), D$y)
-  X_null <- qr.solve(t(R), X_tall)
-  beta_null <- qr.coef(qr(X_null), y_null)
+  beta_null <- c(qr.solve(crossprod(X_tall, qr.solve(Sigma_null, X_tall)),
+                          crossprod(X_tall, qr.solve(Sigma_null, D$y))))
   ll_null <- lmmstest::log_lik(y = D$y,
                                X = X_tall,
                                Z = Z_tall,
@@ -56,7 +55,7 @@ do_one_sim <- function(seed, settings){
   lrt_p_val <- pchisq(lrt_stat, df = 3, lower.tail = FALSE)
   
   # Wald test
-  finf <- lmmstest::fish_inf(y = D$y,
+  finf <- lmmstest:::fish_inf(y = D$y,
                       X = X_tall,
                       Z = Z_tall,
                       Beta = beta_null,
@@ -88,14 +87,14 @@ library(doRNG)
 cl <- makeCluster(8)
 registerDoParallel(cl)
 n_i <- c(20, 40, 80)
-gamma <- seq(0, 1, length.out = 10)
-n_sims <- 1e3
+gamma <- c(0, 0.01, 0.05, seq(0.1, 0.5, length.out = 5))
+n_sims <- 1e4
 results <- list()
 idx <- 1
 for(ii in 1:length(n_i)){
   for(jj in 1:length(gamma)){
     # Settings are (n, T, sigma_e, sigma_u1, sigma_u2, gamma)
-    settings <- c(n_i[ii], 10, 1, sqrt(2), 1, gamma[jj])
+    settings <- c(n_i[ii], 10, 1, 1, 1, gamma[jj])
     res_mat <- foreach(kk = 1:n_sims, .combine = rbind,
                        .errorhandling = "remove",
                        .packages = c("lmmstest", "lme4")) %dorng%{
@@ -107,18 +106,7 @@ for(ii in 1:length(n_i)){
 }
 stopCluster(cl)
 
-saveRDS(results, "~/GitHub/int-est/sims/sims.Rds")
 
-# # Plots
-# pp <- ppoints(n_sims)
-# par(mfrow = c(2, 3))
-# # Our
-# plot(qchisq(pp, df = 3), quantile(results[[]][, 1], pp))
-# 
-# # LRT
-# hist(res_mat[, "lrt_p_val"])
-# plot(pp, quantile(res_mat[, "lrt_p_val"], pp))
-# 
-# # Wald
-# hist(res_mat[, "wald_p_val"])
-# plot(pp, quantile(res_mat[, "wald_p_val"], pp))
+names(results) <- paste(rep(paste("n", n_i, sep = "_"), length(gamma)),
+                        paste("gamma", gamma, sep = "_"), sep = "_")
+saveRDS(results, "~/GitHub/int-est/sims/sims_big.Rds")

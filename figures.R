@@ -54,6 +54,91 @@ lines(lam_vals, dat2[, "ll"], type = "l", lwd = 2, lty = 1,
 if(PDF) dev.off()
 
 ### Simulations ####
+sim_data <- readRDS("~/GitHub/int-est/sims/sims_big.Rds")
+# Verify this using names(sim_data)
+gamma <- c(0, 0.01, 0.05, seq(0.1, 0.5, length.out = 5))
+n_vec <- c(20, 40, 80)
+
+# Cover curves
+cover <- matrix(0, nrow = length(sim_data), ncol = 5)
+for(ii in 1:nrow(cover)){
+  cover[ii, 1:3] <- 1 - colMeans(sim_data[[ii]][, c("p_val", "lrt_p_val", "wald_p_val")] < 0.05)
+}
+cover[, 4] <- rep(n_vec, each = length(gamma))
+cover[, 5] <- rep(gamma, length(n_vec))
+colnames(cover) <- c("our", "lrt", "wald", "n", "gamma")
+
+par(mfrow = c(1, 2))
+# n = 20
+plot(x = gamma,
+     y = cover[cover[, "n"] == 20, "our"],
+     type = "l",
+     ylim = c(0.85, 1),
+     lwd = 2,
+     ylab = "estimated cover probability",
+     xlab = "scaling",
+     main = "n = 20")
+abline(h = 0.95, lwd = 1)
+lines(x = gamma,
+      y = cover[cover[, "n"] == 20, "lrt"],
+      lty = 2,
+      lwd = 2)
+lines(x = gamma,
+      y = cover[cover[, "n"] == 20, "wald"],
+      lty = 3,
+      lwd = 2)
+# n = 80
+plot(x = gamma,
+     y = cover[cover[, "n"] == 80, "our"],
+     type = "l",
+     ylim = c(0.85, 1),
+     lwd = 2,
+     ylab = "estimated cover probability",
+     xlab = "scaling",
+     main = "n = 80")
+abline(h = 0.95, lwd = 1)
+lines(x = gamma,
+      y = cover[cover[, "n"] == 80, "lrt"],
+      lty = 2,
+      lwd = 2)
+lines(x = gamma,
+      y = cover[cover[, "n"] == 80, "wald"],
+      lty = 3,
+      lwd = 2)
 
 
+# Distribution
+n_sims <- nrow(sim_data[[1]])
+pp <- ppoints(n_sims)
+
+par(mfrow = c(1, 2))
+# Small but non-zero scale parameters
+plot_dat <- sim_data[[18]]
+plot(x = qchisq(pp, df = 3),
+     y = quantile(plot_dat[, "chi_sq"], pp),
+     xlab = "theoretical quantiles",
+     ylab = "empirical quantiles",
+     main = "small scale parameters")
+points(x = qchisq(pp, df = 3),
+       y = quantile(plot_dat[, "lrt_chi_sq"], pp),
+       pch = 2)
+points(x = qchisq(pp, df = 3),
+       y = quantile(plot_dat[, "wald_chi_sq"], pp),
+       pch = 3)
+abline(a = 0, b = 1, col = "red")
+
+# Large scale parameters
+plot_dat <- sim_data[[24]]
+plot(x = qchisq(pp, df = 3),
+     y = quantile(plot_dat[, "chi_sq"], pp),
+     xlab = "theoretical quantiles",
+     ylab = "empirical quantiles",
+     main = "large scale parameters")
+points(x = qchisq(pp, df = 3),
+       y = quantile(plot_dat[, "lrt_chi_sq"], pp),
+       pch = 2)
+points(x = qchisq(pp, df = 3),
+       y = quantile(plot_dat[, "wald_chi_sq"], pp),
+       pch = 3)
+abline(a = 0, b = 1, col = "red")
 
