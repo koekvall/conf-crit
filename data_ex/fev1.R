@@ -1,7 +1,7 @@
 library(foreign)
 library(lme4)
 library(lmmstest)
-library(merDeriv)
+library(var)
 
 fev1_dat <- read.dta("http://www.hsph.harvard.edu/fitzmaur/ala2e/fev1.dta")
 
@@ -9,19 +9,57 @@ fev1_dat <- read.dta("http://www.hsph.harvard.edu/fitzmaur/ala2e/fev1.dta")
 fit <- lmer(exp(logfev1) ~ age + ht + baseage + baseht + (1|id) +
                     (0 + age|id), data = fev1_dat, REML = FALSE)
 
-# CI
-confint(fit)
-confint(fit, method = "Wald")
-obs_inf <- vcov(fit, full = TRUE, information = "observed")
-est <- as.data.frame(VarCorr(fit))[1:3, 4]
-se <- sqrt(diag(obs_inf)[6:8])
-sqrt(est + qnorm(0.975) * se)
-sqrt(est - qnorm(0.975) * se)
+# Fit model with sigma "known" (not used)
+X <- getME(fit, "X")
+Z <- as.matrix(getME(fit, "Z"))
+y <- getME(fit, "y")
+Beta_hat <- unname(fixef(fit))
+VC <- as.data.frame(VarCorr(fit))
+lam_hat <- VC[1:2, 5]
+# obj <- function(theta){
+#   -lmmstest::log_lik(y = y,
+#                      X = X,
+#                      Z = Z,
+#                      Beta = theta[1:5],
+#                      sigma = 0.1,
+#                      lambda = theta[6:7],
+#                      lam_idx = rep(1:2, each = 300),
+#                      diffs = 0)[[1]]
+# }
+# obj_grad <- function(theta){
+#   -lmmstest:::score(y = y,
+#                      X = X,
+#                      Z = Z,
+#                      Beta = theta[1:5],
+#                      sigma = 0.1,
+#                      lambda = theta[6:7],
+#                      lam_idx = rep(1:2, each = 300))[c(1:5, 7:8)]
+# }
+#
+# opt <- optim(par = c(Beta_hat, lam_hat),
+#              fn = obj,
+#              gr = obj_grad,
+#              method = "L-BFGS-B",
+#              lower = c(rep(-Inf, 5), 0, 0),
+#              upper = rep(Inf, 7))
 
-# Scale parameters CI
-# Use data resulting from running the code in the section "Get confidence
-# regions" below
-ex_dat <- readRDS("~/GitHub/int-est/data_ex/data_ex.Rds")
+## Gives this
+Beta_hat_fix <- c(-1.46427992,  0.07675971,  2.86959668, -0.02103172, -0.96130005,  0.00000000,  0.02237456)
+
+
+# CI LRT
+confint(fit)
+
+# CI Wald
+# Use midpoint CI estimate to avoid singularity
+inv_finf <- solve(lmmstest:::fish_inf(y = y, X = X, Z = Z, Beta = Beta_hat,
+                            sigma = sig_hat, lambda = c(0.02408163, lam_hat[2]),
+                            lam_idx = rep(1:2, each = 300))[6:8, 6:8]) # By block-diagonality
+c(sig_hat, lam_hat) + 1.96 * sqrt(diag(inv_finf))
+c(sig_hat, lam_hat) - 1.96 * sqrt(diag(inv_finf))
+
+# Proposed CI
+ex_dat <- readRDS("~/GitHub/conf-crit/data_ex/data_ex_R1.Rds")
 
 # Confidence interval for random intercept standard deviation
 lam_val <- ex_dat[[1]]
@@ -47,108 +85,10 @@ test_val
 test_val[c(5:6, 30:31)]
 c(mean(sig_val[5:6]), mean(sig_val[30:31]))
 
-# # Get confidence regions ------------------------------------------------------
-# 
-# X <- getME(fit, "X")
-# Z <- as.matrix(getME(fit, "Z"))
-# y <- getME(fit, "y")
-# Beta_hat <- unname(fixef(fit))
-# VC <- as.data.frame(VarCorr(fit))
-# sig_hat <- VC[3, 5]
-# lam_hat <- VC[1:2, 5]
-# theta_hat <- c(Beta_hat, sig_hat, lam_hat)
-# 
-# # lambda_1
-# get_score_stat_1 <- function(lam_null){
-#   lmmstest::score_test(y = y,
-#                        X = X,
-#                        Z = Z,
-#                        Beta = Beta_hat,
-#                        sigma = sig_hat,
-#                        lambda = c(lam_null, lam_hat[2]),
-#                        lam_idx = rep(1:2, each = 300),
-#                        test_idx = 7)["chi_sq"]
-# }
-# 
-# lam_vec_1 <- seq(0, 0.08, length.out = 50)
-# 
-# test_vec_1 <- rep(0, length(lam_vec_1))
-# for(ii in 1:length(lam_vec_1)){
-#   test_vec_1[ii] <- get_score_stat_1(lam_vec_1[ii])
-# }
-# 
-# # lambda_2
-# get_score_stat_2 <- function(lam_null){
-#   lmmstest::score_test(y = y,
-#                        X = X,
-#                        Z = Z,
-#                        Beta = Beta_hat,
-#                        sigma = sig_hat,
-#                        lambda = c(lam_hat[1], lam_null),
-#                        lam_idx = rep(1:2, each = 300),
-#                        test_idx = 8)["chi_sq"]
-# }
-# 
-# lam_vec_2 <- seq(0.018, 0.023, length.out = 50)
-# test_vec_2 <- rep(0, length(lam_vec_2))
-# for(ii in 1:length(lam_vec_2)){
-#   test_vec_2[ii] <- get_score_stat_2(lam_vec_2[ii])
-# }
-# 
-# 
-# # Joint lambda
-# library(foreach)
-# library(doParallel)
-# library(parallel)
-# 
-# get_score_stat_3 <- function(lam_null){
-#   lmmstest::score_test(y = y,
-#                        X = X,
-#                        Z = Z,
-#                        Beta = Beta_hat,
-#                        sigma = sig_hat,
-#                        lambda = lam_null,
-#                        lam_idx = rep(1:2, each = 300),
-#                        test_idx = 7:8)["chi_sq"]
-# }
-# 
-# test_mat <- matrix(NA, nrow = length(lam_vec_1), ncol = length(lam_vec_2))
-# 
-# numCores <- detectCores() - 2
-# cl <- makeCluster(numCores)
-# registerDoParallel(cl)
-# 
-# for(ii in 1:length(lam_vec_1)){
-#   cat("ii = ", ii, "\n")
-#   out <- foreach(jj = 1:length(lam_vec_2), .combine = c) %dopar% {
-#     res <- try(get_score_stat_3(c(lam_vec_1[ii], lam_vec_2[jj])), TRUE)
-#     if(class(res) == "try-error"){
-#       res <- NA
-#     }
-#     res
-#   }
-#   test_mat[ii, ] <- out
-# }
-# stopCluster(cl)
-# 
-# # sigma
-# get_score_stat_4 <- function(sig_null){
-#   lmmstest::score_test(y = y,
-#                        X = X,
-#                        Z = Z,
-#                        Beta = Beta_hat,
-#                        sigma = sig_null,
-#                        lambda = lam_hat,
-#                        lam_idx = rep(1:2, each = 300),
-#                        test_idx = 6)["chi_sq"]
-# }
-# 
-# sig_vec <- seq(0.15, 0.17, length.out = 50)
-# test_vec_3 <- rep(0, length(sig_vec))
-# for(ii in 1:length(sig_vec)){
-#   test_vec_3[ii] <- get_score_stat_4(sig_vec[ii])
-# }
-# 
-# data_ex_conf <- list(lam_vec_1, lam_vec_2, sig_vec, test_vec_1, test_vec_2,
-#                      test_mat, test_vec_3, fit)
-# saveRDS(data_ex_conf, "~/GitHub/int-est/data_ex/data_ex.Rds")
+# Testing
+fit_A <- lmer(exp(logfev1) ~ age + ht + baseage + baseht +
+                (0 + age|id), data = fev1_dat, REML = FALSE)
+fit_A2 <- lmer(exp(logfev1) ~ age + ht + baseage + baseht + (1|id),
+               data = fev1_dat, REML = FALSE)
+varCompTest(fit, fit_A)
+varCompTest(fit, fit_A2)
